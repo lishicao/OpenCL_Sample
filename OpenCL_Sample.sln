@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenCL_Sample", "OpenCL_Sample\OpenCL_Sample.vcxproj", "{05D552F6-7D04-499F-8177-26D19785CE97}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{05D552F6-7D04-499F-8177-26D19785CE97}.Debug|Win32.ActiveCfg = Debug|Win32
+		{05D552F6-7D04-499F-8177-26D19785CE97}.Debug|Win32.Build.0 = Debug|Win32
+		{05D552F6-7D04-499F-8177-26D19785CE97}.Release|Win32.ActiveCfg = Release|Win32
+		{05D552F6-7D04-499F-8177-26D19785CE97}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
