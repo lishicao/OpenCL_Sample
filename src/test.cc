@@ -3,15 +3,7 @@
 #include <CL/cl.h>
 using namespace std ;
 
-inline  void  checkErr( cl_int err , const char * name ) 
-{
-	if( err != CL_SUCCESS )
-	{
-		cout << "Error : " << name << " (" << err << ")" << endl ;
-		exit( EXIT_FAILURE ) ;
-	}
-}
-
+void  checkErr( cl_int , const char *) ;
 void			 displayInfo() ;
 cl_context       CreateContext() ;
 cl_command_queue CreateQueue( cl_context , cl_device_id * ) ;
@@ -24,6 +16,8 @@ int main( int argc , char ** argv )
 	cl_device_id	 device = 0 ;
 	cl_kernel		 kernel = 0 ;
 	cl_int			 errNum  ;
+
+	displayInfo() ;
 
 	context = CreateContext() ;
 	if( context == NULL )
@@ -42,8 +36,70 @@ int main( int argc , char ** argv )
 	return 0 ;
 }
 
+
+void  checkErr( cl_int err , const char * name ) 
+{
+	if( err != CL_SUCCESS )
+	{
+		cout << "Error : " << name << " (" << err << ")" << endl ;
+		system( "pause" ) ;
+		exit( EXIT_FAILURE ) ;
+	}
+}
+
 void  displayInfo()
 {
+	cl_int errNum ; 
+	cl_platform_id *platformIDs ;
+	cl_device_id   *deviceIDs ;
+	cl_uint platformNum , deviceNum ;
+	cl_char info[500] ;
+
+	errNum = clGetPlatformIDs( 0 , NULL , &platformNum ) ;
+	checkErr( errNum , "clGetPlatformIDs" ) ;
+
+	cout << "There are " << platformNum << " platform(s)." << endl << endl ;
+
+	platformIDs = new cl_platform_id[platformNum] ;
+
+	for( int i = 0 ; i < platformNum ; i ++ )
+	{
+		errNum = clGetPlatformIDs( 1 , &platformIDs[i] , NULL ) ;
+		checkErr( errNum , "clGetPlatformIDs" ) ;
+
+		errNum = clGetPlatformInfo( platformIDs[i] , CL_PLATFORM_NAME , sizeof( cl_char ) * 500 , info , NULL ) ;
+		checkErr( errNum , "clGetPlatformInfo  CL_PLATFORM_NAME" ) ;
+		cout << "Platform name:  " << info << "." << endl ;
+
+		errNum = clGetDeviceIDs( platformIDs[i] , CL_DEVICE_TYPE_ALL , 0 , NULL , &deviceNum ) ;
+		checkErr( errNum , "clGetDeviceIDs  device number") ;
+		cout << "There are " << deviceNum << " device(s) in this platform:  " << endl << endl ; 
+
+		deviceIDs = new cl_device_id[deviceNum] ;
+
+		for( int j = 0 ; j < deviceNum ; j ++ )
+		{
+			errNum = clGetDeviceIDs( platformIDs[i] , CL_DEVICE_TYPE_ALL , 1 , &deviceIDs[j] , NULL ) ;
+			checkErr( errNum , "clGetDeviceIDs" ) ; 
+
+			cl_device_type type ; 
+			errNum = clGetDeviceInfo( deviceIDs[j] , CL_DEVICE_TYPE , sizeof( cl_device_type ) , &type , NULL ) ;
+			checkErr( errNum , "clGetDeviceInfo  CL_DEVICE_TYPE" ) ; 
+			if( type == CL_DEVICE_TYPE_GPU ) cout << "Device type is GPU." << endl ;
+			else cout << "Device type is CPU." << endl ;
+
+			char name[500] ;
+			errNum = clGetDeviceInfo( deviceIDs[j] , CL_DEVICE_NAME , sizeof( char ) * 500 , name , NULL ) ;
+			checkErr( errNum , "clGetDeviceInfo  CL_DEVICE_NAME" ) ; 
+			cout << "Device name is :" << name << endl ;
+			cout << endl ;
+		}
+
+		delete [] deviceIDs ;
+
+		cout << endl << endl <<  endl ;
+	}
+	delete [] platformIDs ;
 }
 
 cl_context CreateContext() 
