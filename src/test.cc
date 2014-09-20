@@ -1,3 +1,9 @@
+/*
+ *auther: Shicao Li
+ *date  : 20th September 2014
+ *
+ * OpenCL Sample Code
+ */
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -10,18 +16,6 @@ using namespace std ;
 const int InputSize = 8 ;
 const int OutputSize = 6 ;
 const int maskSize = 3 ;
-const int argSize = 3 ;
-
-struct memory_type
-{
-	void* data ;
-	int Size ;
-	memory_type( void* a , int size )
-	{
-		data = a ;
-		Size = size ;
-	}
-} ;
 
 cl_uint inputSignal[InputSize][InputSize] = {
 	{ 3 , 1 , 1 , 4 , 8 , 2 , 1 , 3 } ,
@@ -47,7 +41,7 @@ void			 displayInfo() ;
 cl_context       CreateContext() ;
 cl_command_queue CreateQueue( cl_context , cl_device_id * ) ;
 cl_program		 CreateProgram( cl_context , cl_device_id , const char * ) ;
-bool			 CreateMemObject( cl_context , cl_mem* , vector<memory_type> , vector<memory_type> , cl_int& ) ;
+bool			 CreateMemObject( cl_context , cl_mem* , cl_int& ) ;
 void			 print() ;
 
 int main( int argc , char ** argv )
@@ -57,14 +51,8 @@ int main( int argc , char ** argv )
 	cl_program		 program = 0 ;
 	cl_device_id	 device = 0 ;
 	cl_kernel		 kernel = 0 ;
-	cl_mem			 memObject[argSize] ;
+	cl_mem			 memObject[3] = { 0 , 0 , 0 } ;
 	cl_int			 errNum  ;
-
-	vector< memory_type > Input ;
-	vector< memory_type > OutPut ;
-	Input.push_back( memory_type( inputSignal , InputSize * InputSize) ) ;
-	Input.push_back( memory_type( mask , maskSize * maskSize) ) ;
-	OutPut.push_back( memory_type( OutputSignal , maskSize * maskSize) ) ;
 
 	//displayInfo() ;
 
@@ -72,6 +60,7 @@ int main( int argc , char ** argv )
 	if( context == NULL )
 	{
 		cerr << "Failed to create OpenCL context." << endl ;
+		system( "pause" ) ;
 		return 1 ;
 	}
 
@@ -79,6 +68,7 @@ int main( int argc , char ** argv )
 	if( commandQueue == NULL )
 	{
 		cerr << "Failed to create OpenCL commandQueue." << endl ;
+		system( "pause" ) ;
 		return 1 ;
 	}
 
@@ -86,32 +76,40 @@ int main( int argc , char ** argv )
 	if( program == NULL )
 	{
 		cerr << "Failed to create OpenCL program." << endl ;
+		system( "pause" ) ;
 		return 1 ;
 	}
 
 	kernel = clCreateKernel( program , "convolution" , NULL ) ;
-	if( kernel = NULL )
+	if( kernel == NULL )
 	{
 		cerr << "Failed to create OpenCL kernel." << endl ;
+		system( "pause" ) ;
 		return 1 ;
 	}
 
-	CreateMemObject( context , memObject , Input , OutPut , errNum ) ;
-	checkErr( errNum , "clCreateMemObject" ) ;
-
-	for( cl_uint i = 0 ; i < argSize ; i ++ )
+	CreateMemObject( context , memObject , errNum ) ;
+	if( memObject[0] == NULL || memObject[1] == NULL || memObject[2] == NULL )
 	{
-		errNum |= clSetKernelArg( kernel , i , sizeof(cl_mem) , &memObject[i] ) ;
+		cerr << "Failed to create OpenCL memery objects." << endl ;
+		system( "pause" ) ;
+		return 1 ;
 	}
-	checkErr( errNum , "clSetKernelArg" ) ;
 
-	size_t globalWorkSize[1] = { 1 } ;
-	size_t localWorkSize[1] = { 1 } ;
 
-	errNum = clEnqueueNDRangeKernel( commandQueue , kernel , 1 , NULL , globalWorkSize , localWorkSize , 0 , NULL , NULL ) ;
+	errNum |= clSetKernelArg( kernel , 0 , sizeof(cl_mem) , &memObject[0] ) ;
+	errNum |= clSetKernelArg( kernel , 1 , sizeof(cl_mem) , &memObject[1] ) ;
+	errNum |= clSetKernelArg( kernel , 2 , sizeof(cl_mem) , &memObject[2] ) ;
+	errNum |= clSetKernelArg( kernel , 3 , sizeof(cl_int) , &InputSize ) ;
+	errNum |= clSetKernelArg( kernel , 4 , sizeof(cl_int) , &maskSize ) ;
+
+	size_t globalWorkSize[2] = { OutputSize * OutputSize } ;
+	size_t localWorkSize[2] = { 1 , 1 } ;
+	
+	errNum = clEnqueueNDRangeKernel( commandQueue , kernel , 2 , 0 , globalWorkSize , localWorkSize , 0 , NULL , NULL ) ;
 	checkErr( errNum , "clEnqueueNDRangeKernel" ) ;
 
-	errNum = clEnqueueReadBuffer( commandQueue , memObject[3] , CL_TRUE , 0 , OutPut[0].Size , OutputSignal , 0 , NULL , NULL  ) ;
+	errNum = clEnqueueReadBuffer( commandQueue , memObject[2] , CL_TRUE , 0 , sizeof(cl_uint) * OutputSize * OutputSize , OutputSignal , 0 , NULL , NULL  ) ;
 	checkErr( errNum , "clEnqueueReadBuffer" ) ;
 
 	print() ;
@@ -131,6 +129,7 @@ void  checkErr( cl_int err , const char * name )
 	if( err != CL_SUCCESS )
 	{
 		cout << "Error : " << name << " (" << err << ")" << endl ;
+		system( "pause" ) ;
 		exit( EXIT_FAILURE ) ;
 	}
 }
@@ -279,28 +278,19 @@ cl_program CreateProgram( cl_context context , cl_device_id device , const char 
 	return program ;
 }
 
-bool CreateMemObject( cl_context context , cl_mem * memObject , vector<memory_type> Input , vector<memory_type> Output , cl_int &errNum )
+bool CreateMemObject( cl_context context , cl_mem  memObject[3] , cl_int &errNum )
 {
-	int i = 0 ;
-	for( i = 0 ; i < Input.size() ; i ++ )
-	{
-		memObject[i] = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , Input[i].Size , static_cast<void* >( Input[i].data) , &errNum ) ;
-		if( memObject[i] == NULL )
-		{
-			cerr << "Error creating memory objects." << endl ;
-			return false ;
-		}
-	}
+	memObject[0] = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(cl_uint) * InputSize * InputSize , static_cast<void*>(inputSignal) , &errNum ) ;
+	checkErr( errNum , "clCreateBuffer(InputSignal)" ) ;
+		
+	memObject[1] = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(cl_uint) * maskSize * maskSize , static_cast<void*>(mask) , &errNum ) ;
+	checkErr( errNum , "clCreateBuffer(mask)" ) ;
 
-	for( int j = i ; j < Output.size() + i ; j ++ )
-	{
-		memObject[j] = clCreateBuffer( context , CL_MEM_READ_WRITE , Output[j-i].Size , NULL , &errNum ) ;
-		if( memObject[j] == NULL )
-		{
-			cerr << "Error creating memory objects." << endl ;
-			return false ;
-		}
-	}
+	memObject[2] = clCreateBuffer( context , CL_MEM_READ_WRITE , sizeof(cl_uint) * OutputSize * OutputSize , NULL , &errNum ) ;
+	checkErr( errNum , "clCreateBuffer(Output)" ) ;
+
+	if( memObject[0] == NULL || memObject[1] == NULL || memObject[2] == NULL )
+		return false ;
 	return true ;
 }
 
