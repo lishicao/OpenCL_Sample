@@ -1,75 +1,116 @@
-/*
- *auther: Shicao Li
- *date  : 20th September 2014
- *
- * OpenCL Sample Code
- */
+#include <cl/cl.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <string>
-#include <stdlib.h>
-#include <vector>
-#include <CL/cl.h>
 using namespace std ;
 
-const int InputSize = 8 ;
-const int OutputSize = 6 ;
-const int maskSize = 3 ;
+typedef struct 
+{
+	int *vertexArray ;
+	int *edgeArray;
+	int vertexCount , edgeCount ;
+	int *weightArray; 
+} GraphData ;
 
-cl_uint inputSignal[InputSize][InputSize] = {
-	{ 3 , 1 , 1 , 4 , 8 , 2 , 1 , 3 } ,
-	{ 4 , 2 , 1 , 1 , 2 , 1 , 2 , 3 } ,
-	{ 4 , 4 , 4 , 4 , 3 , 2 , 2 , 2 } ,
-	{ 2 , 2 , 2 , 2 , 2 , 2 , 2 , 2 } ,
-	{ 1 , 1 , 1 , 1 , 1 , 1 , 1 , 1 } ,
-	{ 0 , 1 , 1 , 2 , 3 , 4 , 4 , 5 } ,
-	{ 0 , 2 , 1 , 2 , 1 , 3 , 2 , 1 } ,
-	{ 0 , 1 , 0 , 1 , 1 , 1 , 1 , 1 } 
-} ;
-
-cl_uint mask[maskSize][maskSize] = {
-	{ 1 , 1 , 1 } ,
-	{ 1 , 0 , 1 } ,
-	{ 1 , 1 , 1 } 
-};
-
-cl_uint OutputSignal[OutputSize][OutputSize] ;
+void runDijkstra( GraphData* , int , int * ) ;
 
 void			 checkErr( cl_int , const char *) ;
 void			 displayInfo() ;
 cl_context       CreateContext() ;
-cl_command_queue CreateQueue( cl_context , cl_device_id * ) ;
+cl_command_queue CreateCommandQueue( cl_context , cl_device_id * ) ;
 cl_program		 CreateProgram( cl_context , cl_device_id , const char * ) ;
 bool			 CreateMemObject( cl_context , cl_mem* , cl_int& ) ;
-void			 print() ;
+bool			 maskArrayEmpty( int * , int ) ;
 
-int main( int argc , char ** argv )
+int  map[1005][1005] ;
+int  t , n ;
+int  INF = 9999999 ;
+
+int main()
 {
-	cl_context       context = 0 ;
-	cl_command_queue commandQueue = 0 ;
-	cl_program		 program = 0 ;
-	cl_device_id	 device = 0 ;
-	cl_kernel		 kernel = 0 ;
-	cl_mem			 memObject[3] = { 0 , 0 , 0 } ;
-	cl_int			 errNum  ;
+	GraphData graph ;
+	int  start , end , weight , Count = 0 ; 
+	int  *costArray ;
 
-	//displayInfo() ;
+	cin >> graph.edgeCount >> graph.vertexCount ;
+
+	graph.edgeArray = new int[graph.edgeCount*2] ;
+	graph.vertexArray = new int[graph.vertexCount] ;
+	graph.weightArray = new int[graph.edgeCount*2] ;
+	costArray = new int[graph.vertexCount] ;
+
+	memset( map , 0 , sizeof( map ) ) ;
+	memset( graph.vertexArray , -1 , sizeof( graph.vertexArray ) ) ;
+	for( int i = 0 ; i < graph.vertexCount ; i ++ ) graph.vertexArray[i] = -1 ;
+	for( int i = 0 ; i < graph.edgeCount ; ++ i )
+	{
+		cin >> start >> end >> weight ;
+		if ( map[start-1][end-1] == 0) 
+		{
+			map[start-1][end-1] = weight ; 
+			map[end-1][start-1] = weight ;
+		}
+		else if( weight < map[start-1][end-1] )
+		{
+			map[start-1][end-1] = weight ;
+			map[end-1][start-1] = weight ;
+		}
+	}
+
+	for( int i = 0 ; i < graph.vertexCount ; ++ i )
+	{
+		for( int j = 0 ; j < graph.vertexCount ; ++ j )
+		{
+			if( map[i][j] != 0 )
+			{
+				graph.edgeArray[Count] = j ; 
+				graph.weightArray[Count] = map[i][j] ;
+				if( graph.vertexArray[i] == -1 ) graph.vertexArray[i] = Count ;
+				Count ++ ;
+			}
+		}
+	}
+
+	graph.edgeCount *= 2 ;
+	runDijkstra( &graph , 0 , costArray ) ;
+	cout << costArray[graph.vertexCount-1] << endl ;
+	system( "pause" ) ;
+	return 0 ;
+}
+
+void runDijkstra( GraphData* graph , int source , int *costArray )
+{
+	int *updateCostArray = new int[graph->vertexCount] ;
+	int *maskArray = new int[graph->vertexCount];
+	for( int i = 0 ; i < graph->vertexCount ; i ++ ) maskArray[i] = 0 ;
+	for( int i = 0 ; i < graph->vertexCount ; i ++ ) costArray[i] = INF ;
+	for( int i = 0 ; i < graph->vertexCount ; i ++ ) updateCostArray[i] = INF ;
+	maskArray[source] = 1 ; 
+	updateCostArray[source] = 0 ;
+	costArray[source] = 0 ;
+
+	cl_context       context = 0 ;
+	cl_device_id     device = 0 ;
+	cl_program       program = 0 ;
+	cl_kernel        dijkstra_first = 0 , dijkstra_second = 0 ;
+	cl_command_queue commandQueue = 0 ;
+	cl_mem			 vertex = 0 , edge = 0 , weight = 0 , mask = 0 , cost = 0 , updateCost = 0  ;
+	cl_int			 errNum ;
 
 	context = CreateContext() ;
-	if( context == NULL )
+	if( context == NULL ) 
 	{
 		cerr << "Failed to create OpenCL context." << endl ;
 		system( "pause" ) ;
-		return 1 ;
+		exit( 0 ) ;
 	}
 
-	commandQueue = CreateQueue( context , &device ) ;
+	commandQueue = CreateCommandQueue( context , &device) ;
 	if( commandQueue == NULL )
 	{
-		cerr << "Failed to create OpenCL commandQueue." << endl ;
+		cerr << "Failed to create OpenCL commad queue." << endl ;
 		system( "pause" ) ;
-		return 1 ;
+		exit( 0 ) ;
 	}
 
 	program = CreateProgram( context , device , "../src/Kernel.cl" ) ;
@@ -77,58 +118,95 @@ int main( int argc , char ** argv )
 	{
 		cerr << "Failed to create OpenCL program." << endl ;
 		system( "pause" ) ;
-		return 1 ;
+		exit( 0 ) ;
 	}
 
-	kernel = clCreateKernel( program , "convolution" , NULL ) ;
-	if( kernel == NULL )
+	dijkstra_first  = clCreateKernel( program , "Dijkstra_first"  , NULL ) ;
+	dijkstra_second = clCreateKernel( program , "Dijkstra_second" , NULL ) ;
+	if( dijkstra_first == NULL || dijkstra_second == NULL )
 	{
-		cerr << "Failed to create OpenCL kernel." << endl ;
+		cerr << "Failed to Create OpenCL kernel." << endl ;
 		system( "pause" ) ;
-		return 1 ;
+		exit( 0 ) ;
 	}
 
-	CreateMemObject( context , memObject , errNum ) ;
-	if( memObject[0] == NULL || memObject[1] == NULL || memObject[2] == NULL )
+	vertex     = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->vertexCount , graph->vertexArray , NULL ) ;
+	edge       = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->edgeCount   , graph->edgeArray   , NULL ) ;
+	weight     = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->edgeCount   , graph->weightArray , NULL ) ;
+	mask	   = clCreateBuffer( context , CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->vertexCount , maskArray          , NULL ) ;
+	cost       = clCreateBuffer( context , CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->vertexCount , costArray			 , NULL ) ;
+	updateCost = clCreateBuffer( context , CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR , sizeof(int) * graph->vertexCount , updateCostArray    , NULL ) ;
+
+	if( vertex == NULL || edge == NULL || weight == NULL || mask == NULL || cost == NULL || updateCost == NULL )
 	{
-		cerr << "Failed to create OpenCL memery objects." << endl ;
+		cerr << "Error Creating memory objects." << endl ;
 		system( "pause" ) ;
-		return 1 ;
+		exit( 0 ) ;
 	}
 
+	errNum  = clSetKernelArg( dijkstra_first , 0 , sizeof(cl_mem) , &vertex ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 1 , sizeof(cl_mem) , &edge   ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 2 , sizeof(cl_mem) , &weight ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 3 , sizeof(cl_mem) , &mask   ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 4 , sizeof(cl_mem) , &cost   ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 5 , sizeof(cl_mem) , &updateCost ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 6 , sizeof(cl_int) , &graph->vertexCount ) ; 
+	errNum |= clSetKernelArg( dijkstra_first , 7 , sizeof(cl_int) , &graph->edgeCount ) ; 
 
-	errNum |= clSetKernelArg( kernel , 0 , sizeof(cl_mem) , &memObject[0] ) ;
-	errNum |= clSetKernelArg( kernel , 1 , sizeof(cl_mem) , &memObject[1] ) ;
-	errNum |= clSetKernelArg( kernel , 2 , sizeof(cl_mem) , &memObject[2] ) ;
-	errNum |= clSetKernelArg( kernel , 3 , sizeof(cl_int) , &InputSize ) ;
-	errNum |= clSetKernelArg( kernel , 4 , sizeof(cl_int) , &maskSize ) ;
+	errNum  = clSetKernelArg( dijkstra_second , 0 , sizeof(cl_mem) , &vertex ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 1 , sizeof(cl_mem) , &edge   ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 2 , sizeof(cl_mem) , &weight ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 3 , sizeof(cl_mem) , &mask   ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 4 , sizeof(cl_mem) , &cost   ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 5 , sizeof(cl_mem) , &updateCost ) ; 
+	errNum |= clSetKernelArg( dijkstra_second , 6 , sizeof(cl_int) , &graph->vertexCount ) ; 
 
-	size_t globalWorkSize[2] = { OutputSize * OutputSize } ;
-	size_t localWorkSize[2] = { 1 , 1 } ;
-	
-	errNum = clEnqueueNDRangeKernel( commandQueue , kernel , 2 , 0 , globalWorkSize , localWorkSize , 0 , NULL , NULL ) ;
-	checkErr( errNum , "clEnqueueNDRangeKernel" ) ;
+	if( errNum !=CL_SUCCESS )
+	{
+		cerr << "Error setting kernel argument." << endl ;
+		system( "pause" ) ;
+		exit( 0 ) ;
+	}
 
-	errNum = clEnqueueReadBuffer( commandQueue , memObject[2] , CL_TRUE , 0 , sizeof(cl_uint) * OutputSize * OutputSize , OutputSignal , 0 , NULL , NULL  ) ;
-	checkErr( errNum , "clEnqueueReadBuffer" ) ;
+	size_t globalWrokSize[1] = { graph->vertexCount } ;
+	size_t localWrokeSize[1] = { 1 } ;
 
-	print() ;
+	cl_event readDone , first , second ;
 
-	system( "pause" ) ;
-	if( context != NULL )		clReleaseContext( context ) ;
-	if( commandQueue != NULL )  clReleaseCommandQueue( commandQueue ) ;
-	if( program != NULL )		clReleaseProgram( program ) ;
-	if( kernel != NULL )		clReleaseKernel( kernel ) ;
-	clReleaseMemObject( memObject[0] ) ; clReleaseMemObject( memObject[1] ) ; clReleaseMemObject( memObject[2] ) ;
-	return 0 ;
+	while( !maskArrayEmpty( maskArray  , graph->vertexCount ) )
+	{
+		for( int i = 0 ; i < 5 ; i ++ )
+		{
+			errNum = clEnqueueNDRangeKernel( commandQueue , dijkstra_first  , 1 , NULL , globalWrokSize , localWrokeSize , 0 , NULL , &first ) ;
+			checkErr( errNum , "clEnqueueNDRangeKernel" ) ;
+			clWaitForEvents(1, &first);
+
+			errNum = clEnqueueNDRangeKernel( commandQueue , dijkstra_second , 1 , NULL , globalWrokSize , localWrokeSize , 0 , NULL , &second ) ;
+			checkErr( errNum , "clEnqueueNDRangeKernel" ) ;
+			clWaitForEvents(1,&second) ;
+		}
+		clFinish( commandQueue );
+		errNum = clEnqueueReadBuffer( commandQueue , mask , CL_TRUE , 0 , sizeof( int ) * graph->vertexCount , maskArray , 0 , NULL , &readDone ) ;
+		checkErr( errNum , "clEnqueueReadBuffer" ) ;
+		clWaitForEvents(1, &readDone);
+	}
+
+	clFinish( commandQueue ) ;
+	errNum = clEnqueueReadBuffer( commandQueue , cost , CL_TRUE , 0 , sizeof(int) * graph->vertexCount , costArray , 0 , NULL , NULL ) ; 
+	if( errNum !=CL_SUCCESS )
+	{
+		cerr << "Error reading cost buffer." << endl ;
+		system( "pause" ) ;
+		exit( 0 ) ;
+	}
 }
-
 
 void  checkErr( cl_int err , const char * name ) 
 {
 	if( err != CL_SUCCESS )
 	{
 		cout << "Error : " << name << " (" << err << ")" << endl ;
+		cout << err << endl ;
 		system( "pause" ) ;
 		exit( EXIT_FAILURE ) ;
 	}
@@ -180,6 +258,16 @@ void  displayInfo()
 			checkErr( errNum , "clGetDeviceInfo  CL_DEVICE_NAME" ) ; 
 			cout << "Device name is :" << name << endl ;
 			cout << endl ;
+
+			int units ;
+			errNum = clGetDeviceInfo( deviceIDs[j] , CL_DEVICE_MAX_COMPUTE_UNITS , sizeof( units ) , &units , NULL ) ;
+			checkErr( errNum , "clGetDeviceInfo CL_DEVICE_MAX_COMPUTE_UNITS" ) ;
+			cout << "Device max compute units " << units << endl ;
+
+			int size[3] ;
+			errNum = clGetDeviceInfo( deviceIDs[j] , CL_DEVICE_MAX_WORK_ITEM_SIZES , sizeof( int ) * 3 , size , NULL ) ;
+			checkErr( errNum , "clGetDeviceInfo CL_DEVICE_MAX_WORK_ITEM_SIZES" ) ;
+			cout << "Device max work item size  " << size[0] << " " << size[1] << " " << size[2] << endl ;
 		}
 
 		delete [] deviceIDs ;
@@ -210,7 +298,7 @@ cl_context CreateContext()
 	return context ;
 }
 
-cl_command_queue CreateQueue( cl_context context , cl_device_id *device )
+cl_command_queue CreateCommandQueue( cl_context context , cl_device_id *device )
 {
 	cl_int errNum ;
 	cl_device_id *devices ;
@@ -278,28 +366,15 @@ cl_program CreateProgram( cl_context context , cl_device_id device , const char 
 	return program ;
 }
 
-bool CreateMemObject( cl_context context , cl_mem  memObject[3] , cl_int &errNum )
+bool maskArrayEmpty(int *maskArray, int count)
 {
-	memObject[0] = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(cl_uint) * InputSize * InputSize , static_cast<void*>(inputSignal) , &errNum ) ;
-	checkErr( errNum , "clCreateBuffer(InputSignal)" ) ;
-		
-	memObject[1] = clCreateBuffer( context , CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR , sizeof(cl_uint) * maskSize * maskSize , static_cast<void*>(mask) , &errNum ) ;
-	checkErr( errNum , "clCreateBuffer(mask)" ) ;
+    for(int i = 0; i < count; i++ )
+    {
+        if (maskArray[i] == 1)
+        {
+            return false;
+        }
+    }
 
-	memObject[2] = clCreateBuffer( context , CL_MEM_READ_WRITE , sizeof(cl_uint) * OutputSize * OutputSize , NULL , &errNum ) ;
-	checkErr( errNum , "clCreateBuffer(Output)" ) ;
-
-	if( memObject[0] == NULL || memObject[1] == NULL || memObject[2] == NULL )
-		return false ;
-	return true ;
-}
-
-void print()
-{
-	for( int i = 0 ; i < OutputSize ; i ++ )
-	{
-		for( int j = 0 ; j < OutputSize ; j ++ )
-			cout << OutputSignal[i][j] << " " ;
-		cout << endl ;
-	}
+    return true;
 }
